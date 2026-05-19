@@ -6,16 +6,18 @@ Artigo completo: [pilulasdequant.com.br](https://pilulasdequant.com.br)
 
 ## Conteúdo
 
-- `backtest_cqr.py` — implementação dos quatro métodos e geração das métricas e da figura usada no artigo.
+- `backtest_cqr.jl` — implementação dos quatro métodos e geração das métricas e da figura usada no artigo.
 - `ibov_returns.csv` — retornos logarítmicos diários do Ibovespa (^BVSP via Yahoo Finance), de 2004-01-05 a 2024-12-30.
-- `requirements.txt` — dependências Python.
+- `Project.toml` / `Manifest.toml` — manifesto do ambiente Julia.
 
 ## Como reproduzir
 
+Requer Julia 1.10+ instalado.
+
 ```bash
 cd 02_regressao_cqr
-pip install -r requirements.txt
-python backtest_cqr.py
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. backtest_cqr.jl
 ```
 
 O *script* gera:
@@ -23,6 +25,13 @@ O *script* gera:
 - `results_summary.csv` — cobertura global e largura média por método.
 - `results_conditional.csv` — cobertura empírica por decil de volatilidade realizada.
 - `band_march_2020.png` — bandas paramétrica e CQR durante o choque de COVID (fev-abr 2020).
+
+## Pacotes principais
+
+- `LightGBM.jl` — *gradient boosting* com objetivo *quantile* para CQR e regressão padrão para CV+.
+- `DataFrames.jl` / `CSV.jl` — I/O e manipulação de dados.
+- `Statistics`, `Random`, `Dates`, `Printf` — *stdlib*.
+- `Plots.jl` — geração da figura.
 
 ## Splits temporais
 
