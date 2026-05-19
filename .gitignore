@@ -1,0 +1,25 @@
+# Article workspace (HTML, images, prompts, LinkedIn drafts, etc.)
+artigos/
+
+# Workspace and external references
+.claude/
+conformal/
+*.pdf
+
+# Generated outputs
+**/results_*.csv
+**/band_*.png
+**/cond_*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
