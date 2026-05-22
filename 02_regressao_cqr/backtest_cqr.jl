@@ -3,15 +3,16 @@ Backtest de intervalos de previsão para retornos diários do Ibovespa.
 
 Compara 4 métodos para construir intervalos 90% sobre retornos t+1:
   (1) Paramétrico: μ ± 1.645·σ rolling de 252 dias.
-  (2) Bootstrap dos resíduos sobre regressão linear (1000 reps, percentis 5/95).
+  (2) Bootstrap em blocos (Künsch, 1989) sobre regressão linear, L=22 dias.
   (3) Conformalized Quantile Regression (CQR) com LightGBM como base.
   (4) CV+ (variante jackknife+ com K=10 folds) com LightGBM.
 
-Dataset: IBOV diário 2004-01-05 a 2024-12-30 (^BVSP via yfinance).
+Dataset: IBOV diário 2004-01-05 a 2025-12-30 (^BVSP via yfinance).
 Split:
-  - Treino: 2004-2018
-  - Calibração: 2019 (para CQR; CV+ usa treino+calib internamente)
-  - Teste: 2020-2024 (atravessa COVID, eleições e regime alta de juros)
+  - Treino: 2004-2013
+  - Calibração: 2014 (para CQR; CV+ usa treino+calib internamente)
+  - Teste: 2015-2025 (cobre crise fiscal 2015-16, Joesley 2017, eleição 2018,
+                     COVID, ciclo de juros e fiscal 2022-2025)
 
 Output: tabela de métricas (cobertura, largura) e cobertura condicional por decil
 de volatilidade realizada, figura de bandas em fev-abr 2020.
@@ -60,10 +61,10 @@ println("After feature build: $(nrow(df)) rows from $(df.date[1]) to $(df.date[e
 
 const FEATURES = [:ret_lag1, :ret_lag5, :ret_lag22, :rv_5, :rv_22, :absret_lag1, :absret_lag5]
 
-# Splits temporais
-train = df[df.date .< Date(2019,1,1), :]
-cal   = df[(df.date .>= Date(2019,1,1)) .& (df.date .< Date(2020,1,1)), :]
-test  = df[df.date .>= Date(2020,1,1), :]
+# Splits temporais (Train 2004-2013, Cal 2014, Test 2015-2025)
+train = df[df.date .< Date(2014,1,1), :]
+cal   = df[(df.date .>= Date(2014,1,1)) .& (df.date .< Date(2015,1,1)), :]
+test  = df[df.date .>= Date(2015,1,1), :]
 println("Train: $(nrow(train)) | Cal: $(nrow(cal)) | Test: $(nrow(test))")
 
 X_train = Matrix(train[:, FEATURES])
@@ -100,7 +101,7 @@ function method_parametric(df_all::DataFrame, test_idx::Vector{Date})
 end
 
 # ----------------------------------------------------------------------
-# Método 2: Bootstrap dos resíduos sobre regressão linear
+# Método 2: Bootstrap em blocos (Künsch, 1989) sobre regressão linear
 # ----------------------------------------------------------------------
 function ols_fit(X::Matrix{Float64}, y::Vector{Float64})
     Xi = hcat(ones(size(X,1)), X)
@@ -109,16 +110,22 @@ function ols_fit(X::Matrix{Float64}, y::Vector{Float64})
 end
 ols_predict(β::Vector{Float64}, X::Matrix{Float64}) = hcat(ones(size(X,1)), X) * β
 
-function method_bootstrap(B::Int=1000)
+function method_block_bootstrap(B::Int=1000, L::Int=22)
     β = ols_fit(X_train, y_train)
     resid = y_train .- ols_predict(β, X_train)
     pred_test = ols_predict(β, X_test)
     rng = MersenneTwister(42)
     n_test = length(y_test)
+    n_resid = length(resid)
+    n_blocks = Int(ceil(n_test / L))
     samples = Matrix{Float64}(undef, B, n_test)
     for b in 1:B
-        bs = resid[rand(rng, 1:length(resid), n_test)]
-        samples[b, :] = pred_test .+ bs
+        bs = Float64[]
+        for _ in 1:n_blocks
+            s = rand(rng, 1:(n_resid - L + 1))
+            append!(bs, resid[s:(s + L - 1)])
+        end
+        samples[b, :] = pred_test .+ bs[1:n_test]
     end
     lo = [quantile(view(samples, :, j), HALF)     for j in 1:n_test]
     hi = [quantile(view(samples, :, j), 1 - HALF) for j in 1:n_test]
@@ -210,13 +217,13 @@ end
 # Executar e medir
 # ----------------------------------------------------------------------
 println("Fitting Parametric ..."); lo1, hi1 = method_parametric(df, test.date)
-println("Fitting Bootstrap ...");  lo2, hi2 = method_bootstrap()
+println("Fitting Bootstrap blocos ...");  lo2, hi2 = method_block_bootstrap()
 println("Fitting CQR ...");        lo3, hi3 = method_cqr()
 println("Fitting CV+ ...");        lo4, hi4 = method_cvplus(10)
 
 methods = [
     ("Paramétrico (rolling 252d)", lo1, hi1),
-    ("Bootstrap (LR + 1000 reps)", lo2, hi2),
+    ("Bootstrap blocos (LR, L=22, 1000 reps)", lo2, hi2),
     ("CQR (LightGBM-quantile)",    lo3, hi3),
     ("CV+ (K=10, LightGBM)",       lo4, hi4),
 ]
